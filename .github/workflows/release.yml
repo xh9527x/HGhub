@@ -1,10 +1,17 @@
 name: Release
 
 # 打 tag（v1.2.3）即自动出包并发布 Release；也可以在 Actions 页手动跑一次只出产物。
+# 手动跑时可选 Android 构建类型：debug 首测用，不用配签名 secret；release 走现有签名流程。
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Android 构建类型（debug 首测、不用签名 secret；release 走现有签名流程）"
+        type: choice
+        options: [debug, release]
+        default: debug
 
 concurrency:
   group: release-${{ github.ref }}
@@ -128,10 +135,43 @@ jobs:
       - name: 生成 Android 工程
         run: pnpm tauri android init --ci
 
+      # 把入库的 MainActivity（含安全区桥接）拷进刚生成的工程：gen/ 不入库，
+      # 每次 init 都会重建，直接改生成目录的补丁活不过下一次构建。
+      - name: 覆盖 MainActivity（安全区桥接）
+        run: |
+          set -euo pipefail
+          count="$(find src-tauri/gen/android/app/src/main -name MainActivity.kt | wc -l)"
+          if [ "$count" -ne 1 ]; then echo "::error::生成工程里 MainActivity.kt 有 $count 个，期望 1 个"; exit 1; fi
+          dst="$(find src-tauri/gen/android/app/src/main -name MainActivity.kt)"
+          cp src-tauri/android/MainActivity.kt "$dst"
+          echo "MainActivity <- $dst"
+
+      - name: 编译 APK（debug）
+        if: ${{ inputs.build_type == 'debug' }}
+        run: pnpm tauri android build --apk --debug --target aarch64
+
       - name: 编译 APK（按 ABI 分包）
+        if: ${{ inputs.build_type != 'debug' }}
         run: pnpm tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
 
+      - name: 收集 debug APK
+        if: ${{ inputs.build_type == 'debug' }}
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          found=0
+          for f in $(find src-tauri/gen/android/app/build/outputs/apk -name '*-debug*.apk'); do
+            cp "$f" "artifacts/HGhub_${VERSION}_debug.apk"
+            found=$((found+1))
+          done
+          if [ "$found" -eq 0 ]; then echo "::error::没有找到 debug APK"; exit 1; fi
+          if [ "$found" -gt 1 ]; then echo "::error::找到 $found 个 debug APK，期望 1 个"; exit 1; fi
+          ls -lh artifacts
+
       - name: 签名 APK
+        if: ${{ inputs.build_type != 'debug' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
