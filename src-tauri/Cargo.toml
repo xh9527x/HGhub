@@ -53,6 +53,13 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSGeometry"] }
 
+# 安全区桥接（sync_safe_area）需要经 JNI 调 MainActivity.syncSafeArea（见
+# src/lib.rs）。jni/tao 均已是 tauri 的间接依赖，版本与 Cargo.lock 一致；
+# tao 只开启用到的部分，不开默认 feature。
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+tao = { version = "0.37", default-features = false }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

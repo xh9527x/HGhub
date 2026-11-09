@@ -43,6 +43,39 @@ fn allowed_frontend_origin(origin: &str) -> bool {
         })
 }
 
+/// 让 `MainActivity` 重新分发 window insets，把 Android 系统栏/刘海的真实值
+/// 推给前端的 `--sat-native` / `--sab-native`（Android 的 WebView 从不经
+/// `env(safe-area-inset-*)` 暴露这些 inset，见 MainActivity.applySafeAreaToWebView）。
+/// 前端在启动时调一次：刚加载的文档从 CSS 默认值起步，原生 listener 只在
+/// inset 本身变化时才再触发。非 Android 是空操作，命令照常能解析。
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn sync_safe_area(app: tauri::AppHandle) -> Result<(), String> {
+    app.run_on_main_thread(move || {
+        use tao::platform::android::prelude::main_android_context;
+        let Some(ctx) = main_android_context() else {
+            eprintln!("syncSafeArea: no android context yet");
+            return;
+        };
+        let Ok(vm) = (unsafe { jni::JavaVM::from_raw(ctx.java_vm.cast()) }) else {
+            return;
+        };
+        let Ok(mut env) = vm.attach_current_thread() else {
+            return;
+        };
+        let activity = unsafe { jni::objects::JObject::from_raw(ctx.context_jobject.cast()) };
+        if let Err(err) = env.call_method(&activity, "syncSafeArea", "()V", &[]) {
+            eprintln!("syncSafeArea JNI call failed: {err}");
+            let _ = env.exception_clear();
+        }
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn sync_safe_area() {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -133,6 +166,7 @@ pub fn run() {
             playback_log::playback_log_read,
             api::security_set,
             api::debug_log,
+            sync_safe_area,
             api::net_diag,
             api::line_state,
             api::line_set,

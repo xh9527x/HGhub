@@ -215,9 +215,12 @@ function ShellInner({ collapsed, theater }: { collapsed: boolean; theater: boole
 
 /* ============ 移动端（无壳） ============ */
 function MobileShell() {
+  // --sat-native / --sab-native 由安卓原生 MainActivity 从真实 WindowInsets
+  // 推过来（Android 的 WebView 不经 env() 暴露 inset，见 MainActivity.kt）；
+  // 没推到（iOS、桌面、旧壳）时回落到 env()，iOS 的 env() 本来就是对的。
   return (
     <div className="absolute inset-0 flex flex-col bg-canvas plat-android"
-      style={{ "--sat": "max(env(safe-area-inset-top), 8px)", "--sab": "max(env(safe-area-inset-bottom), 6px)" } as React.CSSProperties}>
+      style={{ "--sat": "var(--sat-native, max(env(safe-area-inset-top), 8px))", "--sab": "var(--sab-native, max(env(safe-area-inset-bottom), 6px))" } as React.CSSProperties}>
       <div className="relative flex-1 min-h-0">
         <AppBody />
       </div>
@@ -257,6 +260,17 @@ export default function App() {
       disposed = true;
       handle?.unregister().catch(() => {});
     };
+  }, [platform]);
+
+  /* —— 安卓安全区桥接 ——
+     原生 MainActivity 监听 WindowInsets 推真实值到 --sat-native/--sab-native；
+     这里在启动时调一次 sync_safe_area 让它立即重推（刚加载的文档从 CSS
+     默认值起步，原生 listener 只在 inset 本身变化时才再触发）。非安卓是
+     空操作，旧壳没有这条命令时忽略。 */
+  useEffect(() => {
+    if (platform !== "android") return undefined;
+    invoke("sync_safe_area").catch(() => { /* 旧壳没有这条命令，忽略 */ });
+    return undefined;
   }, [platform]);
 
   useEffect(() => {
