@@ -215,12 +215,43 @@ function ShellInner({ collapsed, theater }: { collapsed: boolean; theater: boole
 
 /* ============ 移动端（无壳） ============ */
 function MobileShell() {
+  // TEMP 诊断（2026-11-10）：底栏仍被导航键遮挡，断点未钉死。浮层实时显示
+  // 原生推过来的 --sab-native/--sat-native、MobileShell 上解析出的 --sab、
+  // sync_safe_area 调用结果、原生推送次数。确认断点后删除整个诊断块。
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [diag, setDiag] = useState({ sabNative: "?", satNative: "?", sab: "?", sync: "?", push: 0 });
+  useEffect(() => {
+    const read = () => {
+      const cs = getComputedStyle(document.documentElement);
+      const root = rootRef.current;
+      setDiag((d) => ({
+        ...d,
+        sabNative: cs.getPropertyValue("--sab-native").trim() || "(空)",
+        satNative: cs.getPropertyValue("--sat-native").trim() || "(空)",
+        sab: root ? getComputedStyle(root).getPropertyValue("--sab").trim() || "(空)" : "(无根)",
+      }));
+    };
+    invoke("sync_safe_area")
+      .then(() => { setDiag((d) => ({ ...d, sync: "ok" })); read(); })
+      .catch((e) => { setDiag((d) => ({ ...d, sync: "fail:" + String(e) })); read(); });
+    const mo = new MutationObserver(() => {
+      setDiag((d) => ({ ...d, push: d.push + 1 }));
+      read();
+    });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
+    const t1 = window.setTimeout(read, 500);
+    const t2 = window.setTimeout(read, 2000);
+    return () => { mo.disconnect(); window.clearTimeout(t1); window.clearTimeout(t2); };
+  }, []);
   // --sat-native / --sab-native 由安卓原生 MainActivity 从真实 WindowInsets
   // 推过来（Android 的 WebView 不经 env() 暴露 inset，见 MainActivity.kt）；
   // 没推到（iOS、桌面、旧壳）时回落到 env()，iOS 的 env() 本来就是对的。
   return (
-    <div className="absolute inset-0 flex flex-col bg-canvas plat-android"
+    <div ref={rootRef} className="absolute inset-0 flex flex-col bg-canvas plat-android"
       style={{ "--sat": "var(--sat-native, max(env(safe-area-inset-top), 8px))", "--sab": "var(--sab-native, max(env(safe-area-inset-bottom), 6px))" } as React.CSSProperties}>
+      <div style={{ position: "fixed", top: 0, left: 0, zIndex: 9999, pointerEvents: "none", background: "rgba(0,0,0,.78)", color: "#0f0", fontSize: 11, lineHeight: 1.5, padding: "4px 6px", fontFamily: "monospace", whiteSpace: "pre" }}>
+        {`sab-native: ${diag.sabNative}\nsat-native: ${diag.satNative}\nsab: ${diag.sab}\nsync: ${diag.sync}\npush: ${diag.push}`}
+      </div>
       <div className="relative flex-1 min-h-0">
         <AppBody />
       </div>
