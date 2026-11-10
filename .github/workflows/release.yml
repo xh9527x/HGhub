@@ -170,21 +170,16 @@ jobs:
           if [ "$found" -gt 1 ]; then echo "::error::找到 $found 个 debug APK，期望 1 个"; exit 1; fi
           ls -lh artifacts
 
+      # Hark 式签名：keystore 直接入库（src-tauri/android/hghub-release.keystore，
+      # 别名 hghub，口令 hghub123），不再读 secret——fork 上 secret 不存在。
+      # 密钥公开在仓库，只装自己打的包（同 AVBox portrait 线的做法）。
       - name: 签名 APK
         if: ${{ inputs.build_type != 'debug' }}
         env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          if [ -z "${KEYSTORE_BASE64:-}" ]; then
-            echo "::error::缺少 ANDROID_KEY_BASE64 secret，无法签名"; exit 1
-          fi
-          KS="$RUNNER_TEMP/release.keystore"
-          echo "$KEYSTORE_BASE64" | base64 -d > "$KS"
+          KS="src-tauri/android/hghub-release.keystore"
           BT="$(ls "$ANDROID_SDK_ROOT/build-tools" | sort -V | tail -1)"
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/$BT/apksigner"
           mkdir -p artifacts
@@ -193,14 +188,13 @@ jobs:
             abi="$(basename "$(dirname "$(dirname "$f")")")"
             out="artifacts/HGhub_${VERSION}_${abi}.apk"
             "$APKSIGNER" sign \
-              --ks "$KS" --ks-key-alias "$KEY_ALIAS" \
-              --ks-pass "pass:$STORE_PASSWORD" --key-pass "pass:$KEY_PASSWORD" \
+              --ks "$KS" --ks-key-alias hghub \
+              --ks-pass "pass:hghub123" --key-pass "pass:hghub123" \
               --v4-signing-enabled false \
               --out "$out" "$f"
             "$APKSIGNER" verify --print-certs "$out" | head -3
             found=$((found+1))
           done
-          rm -f "$KS"
           if [ "$found" -eq 0 ]; then echo "::error::没有找到 release APK"; exit 1; fi
           ls -lh artifacts
 
