@@ -102,7 +102,7 @@ export const api = {
   collect: (id: number, on: boolean) => call<unknown>("api_collect", { id, on }),
   follow: (uid: number, on: boolean) => call<unknown>("api_follow", { uid, on }),
 
-  /* 线路（数据源）：固定线路写死在 Rust 侧，镜像线路按需从地址发布页拉取 */
+  /* 线路（数据源）：固定线路与地址发布页均未内置；线路由用户在设置里手动添加 */
   lineState: () => call<LineState>("line_state"),
   lineSet: (url: string) => call<string>("line_set", { url }),
   lineMirrors: () => call<LineMirrors>("line_mirrors"),

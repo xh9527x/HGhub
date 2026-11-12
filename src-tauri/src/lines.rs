@@ -1,19 +1,16 @@
 //! 线路（数据源）：固定线路 + 地址发布页上的镜像线路。
 //!
-//! 上游只是域名在变，请求链路与数据模型完全一致，所以「切线路」等价于换 `net::base()`。
-//! 镜像地址来自 <https://huangguoai.pages.dev/>：那个页面本身是空壳，真正的清单在
-//! `publish.js` 里（`var urls` 域名数组 + `var subdomains` 子域数组，页面自己随机拼）。
+//! 本仓库未内置任何线路与地址发布页：固定线路为空，镜像发布页未配置，
+//! 线路只能由用户在设置里手动添加。历史内置值见工作区存档文档。
 
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
-/// 固定线路：写死在客户端里，不依赖任何外部页面。
-pub const FIXED: [(&str, &str); 2] = [
-    ("固定线路 1", "https://huangguoai.com"),
-    ("固定线路 2", "https://huangguoai.ai"),
-];
+/// 固定线路：仓库内未内置任何固定线路（历史值见存档），只能由用户手动添加。
+pub const FIXED: [(&str, &str); 0] = [];
 
-const PUBLISH_PAGE: &str = "https://huangguoai.pages.dev/";
+const PUBLISH_PAGE: &str = "";
+/// 镜像地址发布页：未配置（历史值见存档）。
 /// 镜像列表上限（子域 × 域名是笛卡尔积，界面只展示这么多）
 const MIRROR_MAX: usize = 60;
 /// 单条线路探测超时
@@ -27,7 +24,11 @@ pub fn fixed() -> Value {
 }
 
 /// 拉地址发布页 → 解析 publish.js → 拼出镜像地址。只在用户点开「线路」时调用。
+/// 未配置发布页时直接报错，不发任何请求。
 pub async fn mirrors() -> Result<Value, String> {
+    if PUBLISH_PAGE.is_empty() {
+        return Err("未配置地址发布页：请在设置里手动添加线路".to_string());
+    }
     let html = get_text(PUBLISH_PAGE).await?;
     let js_rel = script_src(&html).unwrap_or_else(|| "publish.js".to_string());
     let js_url = absolute(PUBLISH_PAGE, &js_rel);
@@ -210,28 +211,28 @@ var subdomains = [
     'pku',  // 北大
 ];
 var urls=[
-	'xxbgwypx.cc/',
+	'mirror.example/',
 ];
 var otherUrls = [
-	'https://huangguoai.pages.dev',
+	'https://publish.example',
 ];
 var foreverUrls = [
-	  'https://huangguoai.com',
+	  'https://a.example',
 	JumpPage,
-	'https://huangguoai.ai',
+	'https://b.example',
 ];
 "#;
 
     #[test]
     fn parses_publish_js_arrays() {
-        assert_eq!(js_array(SAMPLE, "var urls"), vec!["xxbgwypx.cc/"]);
+        assert_eq!(js_array(SAMPLE, "var urls"), vec!["mirror.example/"]);
         assert_eq!(js_array(SAMPLE, "var subdomains"), vec!["thu", "pku"]);
         assert_eq!(
             js_array(SAMPLE, "var foreverUrls"),
             vec![
-                "https://huangguoai.com",
+                "https://a.example",
                 "JumpPage",
-                "https://huangguoai.ai"
+                "https://b.example"
             ]
         );
     }
@@ -239,12 +240,12 @@ var foreverUrls = [
     #[test]
     fn resolves_relative_script() {
         assert_eq!(
-            absolute("https://huangguoai.pages.dev/", "publish.js?20261103-2"),
-            "https://huangguoai.pages.dev/publish.js?20261103-2"
+            absolute("https://publish.example/", "publish.js?20261103-2"),
+            "https://publish.example/publish.js?20261103-2"
         );
         assert_eq!(
-            absolute("https://huangguoai.pages.dev/", "/a/b.js"),
-            "https://huangguoai.pages.dev/a/b.js"
+            absolute("https://publish.example/", "/a/b.js"),
+            "https://publish.example/a/b.js"
         );
     }
 
@@ -269,9 +270,9 @@ var foreverUrls = [
     #[ignore = "联网测试：探测上游线路连通性，手动用 --ignored 运行"]
     async fn probe_live() {
         let urls = vec![
-            "https://huangguoai.com".to_string(),
-            "https://huangguoai.ai".to_string(),
-            "https://thu.xxbgwypx.cc".to_string(),
+            "https://a.example".to_string(),
+            "https://b.example".to_string(),
+            "https://thu.mirror.example".to_string(),
         ];
         println!(
             "{}",

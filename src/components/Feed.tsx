@@ -169,10 +169,17 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   const hasVideo = kind === "video" || !!post?.video_url;
   const articleHtml = kind === "post" && !hasVideo ? (post?.content || "") : "";
 
-  /* 分享：复制播放链接 */
+  /* 分享：复制播放链接（视频链接用当前线路基址拼；仓库内未内置站点，未设置线路时改复制标题） */
   const shareLink = () => {
-    const u = kind === "post" ? (posts[curId]?.video_url || meta.title) : `https://huangguoai.com/video/${curId}/`;
-    navigator.clipboard?.writeText(u).then(() => toast("链接已复制", "ok")).catch(() => {});
+    if (kind === "post") {
+      const u = posts[curId]?.video_url || meta.title;
+      navigator.clipboard?.writeText(u).then(() => toast("链接已复制", "ok")).catch(() => {});
+      return;
+    }
+    api.lineState().then((s) => {
+      const u = s.base ? `${s.base.replace(/\/+$/, "")}/video/${curId}/` : meta.title;
+      return navigator.clipboard?.writeText(u);
+    }).then(() => toast("链接已复制", "ok")).catch(() => {});
   };
 
   /* 倍速：长按 / 锁定 → 2.0x，否则用基准倍速 */

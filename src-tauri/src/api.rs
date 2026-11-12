@@ -49,7 +49,7 @@ pub async fn net_diag() -> Result<Value, String> {
 
 /* ───────────────────────── 线路（数据源） ───────────────────────── */
 
-/// 当前线路 + 固定线路清单（镜像线路另外按需拉取）。
+/// 当前线路 + 固定线路清单（仓库内无内置线路；镜像线路另外按需拉取）。
 #[tauri::command]
 pub async fn line_state() -> Result<Value, String> {
     Ok(json!({
@@ -70,7 +70,7 @@ pub async fn line_set(state: State<'_, Api>, url: String) -> Result<String, Stri
     Ok(next)
 }
 
-/// 从地址发布页抓镜像线路（只在用户点开「线路」时调用）。
+/// 从地址发布页抓镜像线路（未配置发布页时直接报错；只在用户点开「线路」时调用）。
 #[tauri::command]
 pub async fn line_mirrors() -> Result<Value, String> {
     // 用户手动点「刷新 / 打开线路」时重新读一次系统代理：代理软件开关过之后旧客户端会卡死

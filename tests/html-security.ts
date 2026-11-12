@@ -46,11 +46,11 @@ for (const [i, attack] of attacks.entries()) {
 }
 
 await test("formatting and lazy image survive", () => {
-  fixture.innerHTML = sanitizeHtml('<p><strong>正文</strong><img data-src="/cover.jpg" src="data:image/gif;base64,AAAA" alt="封面"></p>');
+  fixture.innerHTML = sanitizeHtml('<p><strong>正文</strong><img data-src="https://cdn.example/cover.jpg" src="data:image/gif;base64,AAAA" alt="封面"></p>');
   assert(fixture.querySelector("strong")?.textContent === "正文", "formatting lost");
   const img = fixture.querySelector("img");
   assert(img?.getAttribute("src")?.includes("/img?u="), "image not proxied");
-  assert(decodeURIComponent(img!.getAttribute("src")!).endsWith("https://huangguoai.com/cover.jpg"), "wrong image URL");
+  assert(decodeURIComponent(img!.getAttribute("src")!).endsWith("https://cdn.example/cover.jpg"), "wrong image URL");
   assert(img?.alt === "封面" && !img.hasAttribute("data-src"), "image attributes incorrect");
 });
 
@@ -67,9 +67,9 @@ await test("ordered list starting number survives both sanitizer passes", () => 
 });
 
 await test("safe links cannot retain opener", () => {
-  fixture.innerHTML = sanitizeHtml('<a href="/video/123" target="_self" rel="opener">link</a>');
+  fixture.innerHTML = sanitizeHtml('<a href="https://a.example/video/123" target="_self" rel="opener">link</a>');
   const a = fixture.querySelector("a")!;
-  assert(a.href === "https://huangguoai.com/video/123", "relative link broken");
+  assert(a.href === "https://a.example/video/123", "safe link broken");
   assert(a.target === "_blank" && a.rel === "noopener noreferrer", "unsafe link navigation");
 });
 
@@ -82,7 +82,7 @@ await test("internal and private links or spoofed proxy images are rejected in s
   setStrictSecurity(true);
   fixture.innerHTML = sanitizeHtml(
     '<a href="http://tauri.localhost/tests/html-security.html">t</a>' +
-    '<a href="http://hg.localhost/img?u=https://huangguoai.com/a.jpg">h</a>' +
+    '<a href="http://hg.localhost/img?u=https://a.example/a.jpg">h</a>' +
     '<a href="http://127.0.0.1:1420/">l</a>' +
     '<img src="http://hg.localhost/img?u=http%3A%2F%2F127.0.0.1%2Fsecret.jpg">'
   );
@@ -90,7 +90,7 @@ await test("internal and private links or spoofed proxy images are rejected in s
 });
 
 await test("sanitizeHtml is idempotent and intercepts link clicks", () => {
-  const once = sanitizeHtml('<p><a href="/video/123">link</a><img src="/cover.jpg" alt="封面"></p>');
+  const once = sanitizeHtml('<p><a href="https://a.example/video/123">link</a><img src="https://cdn.example/cover.jpg" alt="封面"></p>');
   const twice = sanitizeHtml(once);
   assert(once === twice, "sanitizeHtml is not idempotent");
   fixture.innerHTML = twice;
@@ -98,7 +98,7 @@ await test("sanitizeHtml is idempotent and intercepts link clicks", () => {
   fixture.addEventListener("click", (e) => handleArticleClick(e, (u) => { opened = u; }), { once: true });
   const ev = new MouseEvent("click", { bubbles: true, cancelable: true });
   fixture.querySelector("a")!.dispatchEvent(ev);
-  assert(ev.defaultPrevented && opened === "https://huangguoai.com/video/123", "link click not intercepted safely");
+  assert(ev.defaultPrevented && opened === "https://a.example/video/123", "link click not intercepted safely");
 });
 
 await test("relaxed mode fallback keeps XSS protection while relaxing strict host/style rules", () => {

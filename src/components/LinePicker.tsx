@@ -41,6 +41,7 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
   const [probes, setProbes] = useState<ProbeMap>({});
   const [probing, setProbing] = useState("");
   const [switching, setSwitching] = useState("");
+  const [customUrl, setCustomUrl] = useState("");
 
   const readState = () => {
     api.lineState().then(setState).catch((e) => toast((e as Error).message || "读取线路失败", "info"));
@@ -85,19 +86,28 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
     }
   };
 
-  const pick = async (url: string) => {
-    if (switching || state?.base === url) return;
+  const pick = async (url: string): Promise<boolean> => {
+    if (switching || state?.base === url) return false;
     setSwitching(url);
     try {
       const next = await api.lineSet(url);
       if (next !== state?.base) setUser(null);
       setState((s) => (s ? { ...s, base: next } : s));
       toast(`线路已切换到 ${hostOf(next)}，跨站点需重新登录`, "ok");
+      return true;
     } catch (e) {
       toast((e as Error).message || "切换失败", "info");
+      return false;
     } finally {
       setSwitching("");
     }
+  };
+
+  /* 手动添加线路：仓库内未内置任何线路时唯一的设置入口 */
+  const addCustom = async () => {
+    const url = customUrl.trim();
+    if (!url || switching) return;
+    if (await pick(url)) setCustomUrl("");
   };
 
   const fixed = state?.fixed || [];
@@ -109,7 +119,7 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
         <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><ISettings size={16} /></span>
         <div className="flex-1 min-w-0">
           <div className="text-[14px] font-bold text-on leading-tight">线路</div>
-          <div className="text-[10.5px] text-mut mt-0.5 truncate">当前：{state ? hostOf(state.base) : "读取中…"}</div>
+          <div className="text-[10.5px] text-mut mt-0.5 truncate">当前：{state ? (state.base ? hostOf(state.base) : "未设置") : "读取中…"}</div>
         </div>
         <button onClick={onClose} aria-label="关闭" className="w-8 h-8 rounded-full bg-s3/80 flex items-center justify-center text-mut pressable"><IClose size={16} /></button>
       </div>
@@ -128,7 +138,7 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
             <Row key={it.url} item={it} current={state?.base === it.url} probe={probes[it.url]}
               busy={probing === it.url} disabled={busyAll} onPick={pick} onProbe={(u) => probe([{ url: u }], u)} />
           ))}
-          {!fixed.length && <div className="px-3.5 py-3 text-[11px] text-mut">读取中…</div>}
+          {!fixed.length && <div className="px-3.5 py-3 text-[11px] text-mut">{state ? "无内置线路，请在下方手动添加" : "读取中…"}</div>}
         </div>
 
         <div className="flex items-center gap-2 px-1 mt-4 mb-1.5">
@@ -163,6 +173,27 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
             </button>
           </div>
         )}
+
+        <div className="mt-4">
+          <div className="flex items-center gap-2 px-1 mb-1.5">
+            <span className="text-[10.5px] font-semibold text-dim tracking-wide">手动添加线路</span>
+            <span className="text-[10px] text-dim">粘贴纯 HTTPS 站点地址</span>
+          </div>
+          <div className="rounded-(--r-md) bg-s2 px-3.5 py-2.5 flex items-center gap-2">
+            <input
+              value={customUrl}
+              onChange={(e) => setCustomUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void addCustom(); }}
+              placeholder="https://…"
+              inputMode="url"
+              className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] text-on placeholder:text-dim"
+            />
+            <button onClick={() => void addCustom()} disabled={!!switching || !customUrl.trim()}
+              className="shrink-0 h-7 px-3 rounded-(--r-sm) bg-s4 text-[11px] text-on/80 pressable disabled:opacity-50">
+              添加并切换
+            </button>
+          </div>
+        </div>
 
         <div className="text-[10px] text-dim leading-relaxed px-1 mt-4">
           切换后立即生效，请求链路与数据模型不变。不做自动检测 / 自动切换，只有点「检测」时才探测一次。

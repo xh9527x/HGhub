@@ -1,8 +1,8 @@
 import { LOCAL } from "./api";
 import DOMPurify from "dompurify";
 
-/** 站点根地址：正文里的相对路径要补全 */
-const SITE = "https://huangguoai.com";
+/** 站点根地址：正文里的相对路径要补全；仓库内未内置站点，空串表示未配置，相对地址会被丢弃 */
+const SITE = "";
 // 启动前默认严格；有效状态只由 Rust app_boot / security_set 返回值更新。
 let strictSecurity = true;
 

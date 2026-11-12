@@ -25,7 +25,7 @@ try {
   api.boot = () => boot.promise;
   await act(async () => { root.render(<AppProvider><Probe /></AppProvider>); });
   assert(store!.strictSecurity && !store!.strictSecurityReady, "startup defaults strict until backend responds");
-  await act(async () => boot.resolve({ user: null, logged_in: false, base: "https://huangguoai.com", strict_security: false }));
+  await act(async () => boot.resolve({ user: null, logged_in: false, base: "https://line.example", strict_security: false }));
   assert(!store!.strictSecurity && store!.strictSecurityReady && !isStrictSecurity(), "backend boot controls effective mode");
   assert(document.querySelector(".article-body p")?.hasAttribute("style"), "open article uses compatible mode");
   const save = deferred<boolean>();

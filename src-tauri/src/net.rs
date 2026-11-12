@@ -30,10 +30,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-/// 默认上游（固定线路 1）。
-pub const DEFAULT_BASE: &str = "https://huangguoai.com";
+/// 默认上游：仓库内未内置任何线路，需在设置里手动添加；空串表示未配置。
+pub const DEFAULT_BASE: &str = "";
 
-/// 当前上游基址（不带结尾斜杠）。可在设置里切到固定线路 2 或镜像线路，运行时立即生效。
+/// 当前上游基址（不带结尾斜杠）。可在设置里切换线路，运行时立即生效。
 static BASE: Lazy<RwLock<String>> = Lazy::new(|| RwLock::new(DEFAULT_BASE.to_string()));
 /// 线路配置落盘位置（应用数据目录/line.json），由 [`bind_base`] 在启动时绑定。
 static BASE_FILE: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
@@ -58,9 +58,12 @@ pub fn normalize_base(raw: &str) -> Option<String> {
     Some(parsed.origin().ascii_serialization())
 }
 
-/// 远端发布页只提供游客镜像，不能扩展账号密码的信任范围。
-pub fn trusted_auth_origin(origin: &str) -> bool {
-    matches!(origin, "https://huangguoai.com" | "https://huangguoai.ai")
+/// 内置可信站点：仓库内未内置任何固定站点，故恒为 false（仅游客浏览）。
+/// 密码登录 / 注册与带凭据请求一律不信任，直到维护者在本地把信任站点恢复进
+/// 这个函数（恢复办法见工作区存档 hghub-api-sources.md）。
+/// 远端镜像列表不能扩展账号密码的信任范围。
+pub fn trusted_auth_origin(_origin: &str) -> bool {
+    false
 }
 
 /// 启动时读回上次选择的线路（文件不存在 / 内容坏了就保持默认）。
@@ -481,7 +484,7 @@ pub async fn edge(
             ))
         && !trusted_auth_origin(&cur)
     {
-        return Err("镜像线路仅供游客浏览；登录/注册请切换到固定线路".into());
+        return Err("镜像线路仅供游客浏览；登录/注册需要可信线路，当前未配置".into());
     }
     let (encoded, ctype) = match &body {
         Some(v) => (
@@ -764,17 +767,17 @@ mod tests {
 
     #[test]
     fn edge_redirects_only_replay_anonymous_reads() {
-        let current = url::Url::parse("https://huangguoai.ai/api/edge/request").unwrap();
+        let current = url::Url::parse("https://a.example/api/edge/request").unwrap();
         assert_eq!(
             edge_redirect_target(
                 &current,
                 301,
-                "https://huangguoai.com/api/edge/request",
+                "https://b.example/api/edge/request",
                 true
             )
             .unwrap()
             .host_str(),
-            Some("huangguoai.com")
+            Some("b.example")
         );
         assert!(edge_redirect_target(&current, 302, "/next", true).is_ok());
         for status in [301, 302, 303, 307, 308] {
@@ -803,25 +806,30 @@ mod tests {
     }
 
     #[test]
-    fn base_requires_https_origin_and_auth_trust_is_static() {
+    fn base_requires_https_origin_and_no_builtin_trust() {
         assert_eq!(
-            normalize_base("https://HUANGGUOAI.COM:443/"),
-            Some(DEFAULT_BASE.into())
+            normalize_base("https://EXAMPLE.COM:443/"),
+            Some("https://example.com".to_string())
         );
         for raw in [
-            "http://huangguoai.com",
-            "https://user:pass@huangguoai.com",
-            "https://huangguoai.com/path",
-            "https://huangguoai.com/?secret=1",
-            "https://huangguoai.com/#fragment",
+            "http://example.com",
+            "https://user:pass@example.com",
+            "https://example.com/path",
+            "https://example.com/?secret=1",
+            "https://example.com/#fragment",
             "https://192.168.1.1",
         ] {
             assert_eq!(normalize_base(raw), None, "{raw}");
         }
-        assert!(trusted_auth_origin(DEFAULT_BASE));
-        assert!(trusted_auth_origin("https://huangguoai.ai"));
-        assert!(!trusted_auth_origin("https://mirror.example"));
-        assert!(!trusted_auth_origin("https://huangguoai.com.evil.example"));
+        // 仓库内未内置任何可信站点：任何来源一律不信任。
+        for origin in [
+            "https://example.com",
+            "https://a.example",
+            "https://mirror.example",
+            "https://example.com.evil.example",
+        ] {
+            assert!(!trusted_auth_origin(origin), "{origin}");
+        }
     }
 
     #[tokio::test]
