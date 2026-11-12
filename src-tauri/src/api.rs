@@ -31,6 +31,42 @@ impl Api {
             .ok_or_else(|| "请先登录".to_string())?;
         edge(&origin, method, path, body, Some(&token)).await
     }
+
+    /// 播放嗅探（只改这一处）：原接口 `video_url` 为空时，改走
+    /// `POST /api/videos/{id}/playback`（第 1 集）或
+    /// `POST /api/videos/{id}/episodes/{ep}/playback`（第 2 集起），
+    /// 读 `data.streams.main`（无则读 `hevc`）当流地址。
+    /// 走边缘信封（与其它业务接口同一入口），游客无 token 也能调。
+    /// 嗅探不到返回 None，调用方保持原数据不变。
+    async fn playback_sniff(&self, id: i64, ep: u32) -> Option<(String, Option<String>)> {
+        let origin = base();
+        let token = self.session.token(&origin);
+        let path = if ep > 1 {
+            format!("/api/videos/{id}/episodes/{ep}/playback")
+        } else {
+            format!("/api/videos/{id}/playback")
+        };
+        let data = edge(&origin, "POST", &path, None, token.as_deref())
+            .await
+            .ok()?;
+        let pick = |o: Option<&Value>, keys: &[&str]| -> Option<String> {
+            let o = o?;
+            for k in keys {
+                if let Some(s) = o.get(k).and_then(|v| v.as_str()) {
+                    if !s.is_empty() {
+                        return Some(s.to_string());
+                    }
+                }
+            }
+            None
+        };
+        let streams = data.get("streams");
+        let main = pick(streams, &["main"])
+            .or_else(|| pick(Some(&data), &["video_url", "main"]));
+        let hevc = pick(streams, &["hevc"])
+            .or_else(|| pick(Some(&data), &["video_url_hevc", "hevc"]));
+        main.map(|m| (m, hevc))
+    }
 }
 
 /// API/运行错误与自检统一写入 debug.log，每行附 RFC 3339 UTC 时间和进程编号。
@@ -364,9 +400,28 @@ pub async fn api_video(state: State<'_, Api>, id: i64) -> Result<Value, String> 
 
 #[tauri::command]
 pub async fn api_play(state: State<'_, Api>, id: i64, ep: u32) -> Result<Value, String> {
-    state
+    let mut data = state
         .get(&format!("/api/videos/{id}/play?ep={ep}&page_texts=0"))
-        .await
+        .await?;
+    let has_url = data
+        .get("video_url")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty())
+        || data
+            .get("video_url_hevc")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.is_empty());
+    if !has_url {
+        if let Some((main, hevc)) = state.playback_sniff(id, ep).await {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("video_url".to_string(), json!(main));
+                if let Some(h) = hevc {
+                    obj.insert("video_url_hevc".to_string(), json!(h));
+                }
+            }
+        }
+    }
+    Ok(data)
 }
 
 /* ───────────────────────── 评论 / 互动 ───────────────────────── */
