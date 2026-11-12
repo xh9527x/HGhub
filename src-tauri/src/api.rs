@@ -49,13 +49,14 @@ pub async fn net_diag() -> Result<Value, String> {
 
 /* ───────────────────────── 线路（数据源） ───────────────────────── */
 
-/// 当前线路 + 固定线路清单（仓库内无内置线路；镜像线路另外按需拉取）。
+/// 当前线路 + 固定线路清单 + 手动添加的线路（仓库内无内置线路；镜像线路另外按需拉取）。
 #[tauri::command]
 pub async fn line_state() -> Result<Value, String> {
     Ok(json!({
         "base": base(),
         "default": crate::net::DEFAULT_BASE,
         "fixed": crate::lines::fixed(),
+        "custom": crate::net::custom_lines(),
     }))
 }
 
@@ -68,6 +69,12 @@ pub async fn line_set(state: State<'_, Api>, url: String) -> Result<String, Stri
         state.session.clear();
     }
     Ok(next)
+}
+
+/// 覆盖保存手动添加的线路列表（逐条校验、去重后落盘），返回保存结果。
+#[tauri::command]
+pub async fn line_custom_set(urls: Vec<String>) -> Result<Vec<String>, String> {
+    Ok(crate::net::set_custom_lines(urls))
 }
 
 /// 从地址发布页抓镜像线路（未配置发布页时直接报错；只在用户点开「线路」时调用）。

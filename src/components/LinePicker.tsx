@@ -7,9 +7,9 @@ import { ICheck, IClose, IRefresh, ISettings } from "../icons";
 type ProbeMap = Record<string, LineProbe>;
 
 /* 单条线路：左侧点一下即切换，右侧单独检测 */
-function Row({ item, current, probe, busy, disabled, onPick, onProbe }: {
+function Row({ item, current, probe, busy, disabled, onPick, onProbe, onDelete }: {
   item: LineItem; current: boolean; probe?: LineProbe; busy: boolean; disabled: boolean;
-  onPick: (url: string) => void; onProbe: (url: string) => void;
+  onPick: (url: string) => void; onProbe: (url: string) => void; onDelete?: (url: string) => void;
 }) {
   return (
     <div className={`flex items-center gap-2 px-3.5 py-2.5 ${current ? "bg-s3/70" : ""}`}>
@@ -27,6 +27,10 @@ function Row({ item, current, probe, busy, disabled, onPick, onProbe }: {
       </span>
       <button onClick={() => onProbe(item.url)} disabled={busy || disabled}
         className="shrink-0 h-7 px-2.5 rounded-(--r-sm) bg-s4 text-[11px] text-on/80 pressable disabled:opacity-50">检测</button>
+      {onDelete && (
+        <button onClick={() => onDelete(item.url)} disabled={disabled} aria-label="删除"
+          className="shrink-0 h-7 w-7 rounded-(--r-sm) bg-s4 text-[13px] text-danger pressable disabled:opacity-50">✕</button>
+      )}
     </div>
   );
 }
@@ -42,9 +46,10 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
   const [probing, setProbing] = useState("");
   const [switching, setSwitching] = useState("");
   const [customUrl, setCustomUrl] = useState("");
+  const [custom, setCustom] = useState<string[]>([]);
 
   const readState = () => {
-    api.lineState().then(setState).catch((e) => toast((e as Error).message || "读取线路失败", "info"));
+    api.lineState().then((s) => { setState(s); setCustom(s.custom || []); }).catch((e) => toast((e as Error).message || "读取线路失败", "info"));
   };
 
   const readMirrors = async () => {
@@ -86,28 +91,47 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
     }
   };
 
-  const pick = async (url: string): Promise<boolean> => {
-    if (switching || state?.base === url) return false;
+  const pick = async (url: string): Promise<string | null> => {
+    if (switching || state?.base === url) return state?.base === url ? url : null;
     setSwitching(url);
     try {
       const next = await api.lineSet(url);
       if (next !== state?.base) setUser(null);
       setState((s) => (s ? { ...s, base: next } : s));
       toast(`线路已切换到 ${hostOf(next)}，跨站点需重新登录`, "ok");
-      return true;
+      return next;
     } catch (e) {
       toast((e as Error).message || "切换失败", "info");
-      return false;
+      return null;
     } finally {
       setSwitching("");
     }
   };
 
-  /* 手动添加线路：仓库内未内置任何线路时唯一的设置入口 */
+  /* 手动添加线路：仓库内未内置任何线路时唯一的设置入口；成功后记入“我的线路” */
   const addCustom = async () => {
     const url = customUrl.trim();
     if (!url || switching) return;
-    if (await pick(url)) setCustomUrl("");
+    const next = await pick(url);
+    if (!next) return;
+    if (!custom.includes(next)) {
+      try {
+        setCustom(await api.lineCustomSet([...custom, next]));
+      } catch (e) {
+        toast((e as Error).message || "保存失败", "info");
+        return;
+      }
+    }
+    setCustomUrl("");
+  };
+
+  /* 从“我的线路”里删除一条（不影响当前正在用的线路） */
+  const removeCustom = async (url: string) => {
+    try {
+      setCustom(await api.lineCustomSet(custom.filter((u) => u !== url)));
+    } catch (e) {
+      toast((e as Error).message || "删除失败", "info");
+    }
   };
 
   const fixed = state?.fixed || [];
@@ -127,7 +151,6 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
       <div className="flex-1 scroll-y px-3 pb-4">
         <div className="flex items-center gap-2 px-1 mt-1 mb-1.5">
           <span className="text-[10.5px] font-semibold text-dim tracking-wide">固定线路</span>
-          <span className="text-[10px] text-dim">需代理 / 非大陆网络</span>
           <button onClick={() => probe(fixed, "fixed")} disabled={busyAll || !fixed.length}
             className="ml-auto text-[10.5px] text-primary pressable disabled:opacity-50">
             {probing === "fixed" ? "检测中…" : "全部检测"}
@@ -139,6 +162,36 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
               busy={probing === it.url} disabled={busyAll} onPick={pick} onProbe={(u) => probe([{ url: u }], u)} />
           ))}
           {!fixed.length && <div className="px-3.5 py-3 text-[11px] text-mut">{state ? "无内置线路，请在下方手动添加" : "读取中…"}</div>}
+        </div>
+
+        <div className="flex items-center gap-2 px-1 mt-4 mb-1.5">
+          <span className="text-[10.5px] font-semibold text-dim tracking-wide">我的线路</span>
+          <span className="text-[10px] text-dim">手动添加 · 可存多条</span>
+          <button onClick={() => probe(custom.map((url) => ({ url })), "custom")} disabled={busyAll || !custom.length}
+            className="ml-auto text-[10.5px] text-primary pressable disabled:opacity-50">
+            {probing === "custom" ? "检测中…" : "全部检测"}
+          </button>
+        </div>
+        <div className="rounded-(--r-md) bg-s2 divide-y divide-s3 overflow-hidden">
+          {custom.map((url) => (
+            <Row key={url} item={{ url }} current={state?.base === url} probe={probes[url]}
+              busy={probing === url} disabled={busyAll} onPick={pick} onProbe={(u) => probe([{ url: u }], u)} onDelete={removeCustom} />
+          ))}
+          {!custom.length && <div className="px-3.5 py-3 text-[11px] text-mut">还没有手动添加的线路，在下方粘贴地址添加</div>}
+        </div>
+        <div className="rounded-(--r-md) bg-s2 px-3.5 py-2.5 flex items-center gap-2 mt-2">
+          <input
+            value={customUrl}
+            onChange={(e) => setCustomUrl(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void addCustom(); }}
+            placeholder="https://…"
+            inputMode="url"
+            className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] text-on placeholder:text-dim"
+          />
+          <button onClick={() => void addCustom()} disabled={!!switching || !customUrl.trim()}
+            className="shrink-0 h-7 px-3 rounded-(--r-sm) bg-s4 text-[11px] text-on/80 pressable disabled:opacity-50">
+            添加并切换
+          </button>
         </div>
 
         <div className="flex items-center gap-2 px-1 mt-4 mb-1.5">
@@ -173,27 +226,6 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
             </button>
           </div>
         )}
-
-        <div className="mt-4">
-          <div className="flex items-center gap-2 px-1 mb-1.5">
-            <span className="text-[10.5px] font-semibold text-dim tracking-wide">手动添加线路</span>
-            <span className="text-[10px] text-dim">粘贴纯 HTTPS 站点地址</span>
-          </div>
-          <div className="rounded-(--r-md) bg-s2 px-3.5 py-2.5 flex items-center gap-2">
-            <input
-              value={customUrl}
-              onChange={(e) => setCustomUrl(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") void addCustom(); }}
-              placeholder="https://…"
-              inputMode="url"
-              className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] text-on placeholder:text-dim"
-            />
-            <button onClick={() => void addCustom()} disabled={!!switching || !customUrl.trim()}
-              className="shrink-0 h-7 px-3 rounded-(--r-sm) bg-s4 text-[11px] text-on/80 pressable disabled:opacity-50">
-              添加并切换
-            </button>
-          </div>
-        </div>
 
         <div className="text-[10px] text-dim leading-relaxed px-1 mt-4">
           切换后立即生效，请求链路与数据模型不变。不做自动检测 / 自动切换，只有点「检测」时才探测一次。

@@ -37,12 +37,46 @@ pub const DEFAULT_BASE: &str = "";
 static BASE: Lazy<RwLock<String>> = Lazy::new(|| RwLock::new(DEFAULT_BASE.to_string()));
 /// 线路配置落盘位置（应用数据目录/line.json），由 [`bind_base`] 在启动时绑定。
 static BASE_FILE: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
+/// 用户手动添加的线路（多条），与当前基址一起落盘到 line.json（`custom` 数组）。
+static CUSTOM: Lazy<RwLock<Vec<String>>> = Lazy::new(|| RwLock::new(Vec::new()));
 
 /// 当前上游基址。
 pub fn base() -> String {
     BASE.read()
         .map(|b| b.clone())
         .unwrap_or_else(|_| DEFAULT_BASE.to_string())
+}
+
+/// 用户手动添加的线路列表（规整后的 HTTPS origin，按添加顺序）。
+pub fn custom_lines() -> Vec<String> {
+    CUSTOM.read().map(|c| c.clone()).unwrap_or_default()
+}
+
+/// 把当前基址 + 手动线路一起写回 line.json。
+fn write_line_file() {
+    if let Some(path) = BASE_FILE.read().ok().and_then(|p| p.clone()) {
+        let _ = std::fs::write(
+            path,
+            json!({ "base": base(), "custom": custom_lines() }).to_string(),
+        );
+    }
+}
+
+/// 覆盖保存手动线路列表：逐条规整校验、去重（保序），落盘后返回保存结果。
+pub fn set_custom_lines(urls: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for u in urls {
+        if let Some(n) = normalize_base(&u) {
+            if !out.contains(&n) {
+                out.push(n);
+            }
+        }
+    }
+    if let Ok(mut cur) = CUSTOM.write() {
+        *cur = out.clone();
+    }
+    write_line_file();
+    out
 }
 
 /// 线路必须是纯 HTTPS origin，不允许路径、认证、查询串或片段。
@@ -66,7 +100,7 @@ pub fn trusted_auth_origin(_origin: &str) -> bool {
     false
 }
 
-/// 启动时读回上次选择的线路（文件不存在 / 内容坏了就保持默认）。
+/// 启动时读回上次选择的线路与手动添加的线路（文件不存在 / 内容坏了就保持默认）。
 pub fn bind_base(dir: &std::path::Path) {
     network_policy::bind_security(dir);
     let path = dir.join("line.json");
@@ -79,6 +113,19 @@ pub fn bind_base(dir: &std::path::Path) {
             {
                 if let Ok(mut cur) = BASE.write() {
                     *cur = next;
+                }
+            }
+            if let Some(list) = v.get("custom").and_then(|x| x.as_array()) {
+                let mut out: Vec<String> = Vec::new();
+                for item in list {
+                    if let Some(n) = item.as_str().and_then(normalize_base) {
+                        if !out.contains(&n) {
+                            out.push(n);
+                        }
+                    }
+                }
+                if let Ok(mut cur) = CUSTOM.write() {
+                    *cur = out;
                 }
             }
         }
@@ -96,9 +143,7 @@ pub fn set_base(url: &str) -> Result<String, String> {
     if let Ok(mut cur) = BASE.write() {
         *cur = next.clone();
     }
-    if let Some(path) = BASE_FILE.read().ok().and_then(|p| p.clone()) {
-        let _ = std::fs::write(path, json!({ "base": next }).to_string());
-    }
+    write_line_file();
     if previous != next {
         crate::playback_log::record(
             "line.changed",
@@ -830,6 +875,20 @@ mod tests {
         ] {
             assert!(!trusted_auth_origin(origin), "{origin}");
         }
+    }
+
+    #[test]
+    fn custom_lines_are_normalized_deduped_and_saved() {
+        // 仅测规整与去重；落盘依赖 BASE_FILE，未绑定时不写盘。
+        let saved = set_custom_lines(vec![
+            "https://EXAMPLE.com:443/".to_string(),
+            "https://example.com".to_string(),
+            "http://example.com".to_string(),
+            "not a url".to_string(),
+            "https://b.example/".to_string(),
+        ]);
+        assert_eq!(saved, vec!["https://example.com", "https://b.example"]);
+        assert_eq!(custom_lines(), saved);
     }
 
     #[tokio::test]
