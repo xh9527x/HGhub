@@ -1,5 +1,6 @@
 package com.hghub.huangguo
 
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -43,11 +44,34 @@ class MainActivity : TauriActivity() {
     runOnUiThread { findViewById<View>(android.R.id.content).requestApplyInsets() }
   }
 
-  /** 把系统栏 + 刘海 inset 推给前端的 --sat-native / --sab-native。 */
+  /**
+   * 把系统栏 + 刘海 inset 推给前端的 --sat-native / --sab-native，同时给
+   * WebView 加底部原生 padding（空白区），把底部标签栏顶到三键导航栏之上。
+   *
+   * 为什么是原生 padding 而不是前端垫空白：只有原生知道导航栏的真实高度；
+   * 前端垫要么写死高度（换设备不准），要么等桥接的 --sab-native（正是坏
+   * 掉的那环）。padding 不依赖页面加载时序：listener 一跑就生效。
+   *
+   * 动态跟随：listener 每次 inset 变化都会再跑，全屏播放时导航栏隐藏 →
+   * bottom 归 0 → padding 归 0，不留空边。padding 用物理 px（bars.bottom
+   * 本来就是物理 px，别除以 density）。空白区颜色跟 TabBar 走（深色
+   * #141414 / 浅色 #FAFAFA，按系统夜间模式），否则默认白底在深色模式下
+   * 很扎眼。--sat-native / --sab-native 的 JS 推送原样保留（诊断浮层还
+   * 要用它验证一轮）。
+   */
   private fun applySafeAreaToWebView(insets: WindowInsetsCompat) {
     val bars = insets.getInsets(
       WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
     )
+    val webView = findWebView(findViewById(android.R.id.content))
+    if (webView != null) {
+      webView.setPadding(
+        webView.paddingLeft, webView.paddingTop, webView.paddingRight, bars.bottom
+      )
+      val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+        Configuration.UI_MODE_NIGHT_YES
+      webView.setBackgroundColor(if (night) 0xFF141414.toInt() else 0xFFFAFAFA.toInt())
+    }
     // WebView 的 CSS px = 物理 px / density。
     val density = resources.displayMetrics.density
     val js = """
@@ -57,7 +81,7 @@ class MainActivity : TauriActivity() {
         s.setProperty('--sab-native', '${bars.bottom / density}px');
       })();
     """.trimIndent()
-    findWebView(findViewById(android.R.id.content))?.evaluateJavascript(js, null)
+    webView?.evaluateJavascript(js, null)
   }
 
   private fun findWebView(root: View): WebView? {
