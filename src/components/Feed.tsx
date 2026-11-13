@@ -325,7 +325,8 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     else el.requestFullscreen().catch(() => {});
   };
 
-  /* —— 长按 2x（上滑锁定） / 横拖定位 / 单击暂停 —— */
+  /* —— 长按 2x（上滑锁定） / 单击暂停 ——
+     横拖不再定位：横拖归 Tab 左右滑动切菜单（TikTok 式），快进走底部进度条 */
   const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (isDesktop || controlsLocked || !active || gesture.current || e.button !== 0) return;
     const el = e.currentTarget;
@@ -367,9 +368,10 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
 
     if (g.mode === "idle") {
       if (Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy)) {
+        /* 横拖归 Tab 左右滑动切菜单，视频不再横拖定位：只清长按定时器、
+           置 pan 让轨道接管，不暂停、不 seek。 */
         if (g.timer) window.clearTimeout(g.timer);
-        g.mode = "scrub";
-        videoRef.current?.pause();
+        g.mode = "pan";
       } else if (Math.abs(dy) > 14) {
         if (g.timer) window.clearTimeout(g.timer);
         g.mode = "pan";

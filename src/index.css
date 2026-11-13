@@ -107,6 +107,9 @@ button { cursor: pointer; font-family: inherit; }
 .scroll-y { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--p-s4) transparent; }
 .scroll-x { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
 .scroll-x::-webkit-scrollbar { display: none; }
+/* 底部 Tab 跟手滑动轨道（移动端，TikTok 式）：四页横排，轨道平移切页 */
+.tab-track { will-change: transform; }
+.tab-page { flex: 0 0 100%; height: 100%; position: relative; overflow: hidden; }
 .scroll-y::-webkit-scrollbar { width: 5px; }
 .scroll-y::-webkit-scrollbar-track { background: transparent; }
 .scroll-y::-webkit-scrollbar-thumb { background: var(--p-s4); border-radius: 99px; }

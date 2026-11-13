@@ -81,9 +81,22 @@ function StackPage({ page, onBack, wide, top, bottomInset }: {
 }
 
 /* ============ 应用主体 ============ */
+/* 底部 Tab 顺序（左右滑动切菜单用，与 TabBar 一致） */
+const TABS: Tab[] = ["home", "search", "category", "profile"];
+
 function AppBody() {
   const { platform, tab, setTab, stack, pop, loginOpen, setLoginOpen, fs } = useStore();
   const mainRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  /* 跟手滑动拖拽状态（只存在 ref 里，拖动时不触发 React 重渲染） */
+  const dragRef = useRef({
+    active: false,
+    locked: null as null | "h" | "v",
+    startX: 0,
+    startY: 0,
+    startIndex: 0,
+    dx: 0,
+  });
   const [wide, setWide] = useState(!isMobile);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -115,7 +128,95 @@ function AppBody() {
     return () => window.removeEventListener("keydown", fn);
   }, [stack.length, pop, setTab, loginOpen, setLoginOpen]);
 
-  const vis = (k: Tab) => (tab === k ? "absolute inset-0" : "absolute inset-0 invisible pointer-events-none");
+  /* Tab 切换时把轨道滑到对应页（点底栏 / 键盘 / 返回键走这里；
+     手指拖动时由下面的 touch 处理直接驱动 transform，不经过这里） */
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track || dragRef.current.active) return;
+    const idx = TABS.indexOf(tab);
+    track.style.transition = "transform .28s cubic-bezier(.22,.8,.3,1)";
+    track.style.transform = `translateX(${-idx * 100}%)`;
+  }, [tab]);
+
+  /* 左右跟手滑动切菜单（TikTok 式，仅移动端）。
+     用原生 touch 监听：React 的 onTouchMove 是 passive，拦不住滚动。
+     挂在轨道上——栈页（详情/播放页）盖在轨道之上，打开时摸不到轨道，
+     所以详情页里左右滑不会切菜单；底栏是轨道的兄弟，也不会触发。 */
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    /* 这几种起手不接管：输入框、自定义拖拽控件（进度条，touch-action:none）、横向滚动条（分类 chips） */
+    const shouldIgnore = (target: EventTarget | null): boolean => {
+      let el = target as HTMLElement | null;
+      while (el && el !== track) {
+        const tag = el.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable) return true;
+        if (getComputedStyle(el).touchAction === "none") return true;
+        if (el.scrollWidth > el.clientWidth + 1) {
+          const ox = getComputedStyle(el).overflowX;
+          if (ox === "auto" || ox === "scroll") return true;
+        }
+        el = el.parentElement;
+      }
+      return false;
+    };
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1 || shouldIgnore(e.target)) return;
+      const d = dragRef.current;
+      const t = e.touches[0];
+      d.active = true;
+      d.locked = null;
+      d.startX = t.clientX;
+      d.startY = t.clientY;
+      d.startIndex = TABS.indexOf(tab);
+      d.dx = 0;
+    };
+    const onMove = (e: TouchEvent) => {
+      const d = dragRef.current;
+      if (!d.active) return;
+      const t = e.touches[0];
+      const dx = t.clientX - d.startX;
+      const dy = t.clientY - d.startY;
+      if (d.locked === null) {
+        if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.3) d.locked = "h";
+        else if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) * 1.3) { d.locked = "v"; d.active = false; return; }
+        else return;
+      }
+      if (d.locked !== "h") return;
+      e.preventDefault();
+      d.dx = dx;
+      const w = track.clientWidth || 1;
+      let off = dx;
+      if ((d.startIndex === 0 && dx > 0) || (d.startIndex === TABS.length - 1 && dx < 0)) off = dx * 0.35;
+      track.style.transition = "none";
+      track.style.transform = `translateX(${-d.startIndex * w + off}px)`;
+    };
+    const onEnd = () => {
+      const d = dragRef.current;
+      if (!d.active) return;
+      d.active = false;
+      if (d.locked !== "h") { d.locked = null; return; }
+      d.locked = null;
+      const w = track.clientWidth || 1;
+      let target = d.startIndex;
+      if (Math.abs(d.dx) > 60 || Math.abs(d.dx) > w * 0.25) target = d.startIndex + (d.dx < 0 ? 1 : -1);
+      target = Math.max(0, Math.min(TABS.length - 1, target));
+      track.style.transition = "transform .28s cubic-bezier(.22,.8,.3,1)";
+      track.style.transform = `translateX(${-target * 100}%)`;
+      if (target !== d.startIndex) setTab(TABS[target]);
+    };
+    track.addEventListener("touchstart", onStart, { passive: true });
+    track.addEventListener("touchmove", onMove, { passive: false });
+    track.addEventListener("touchend", onEnd);
+    track.addEventListener("touchcancel", onEnd);
+    return () => {
+      track.removeEventListener("touchstart", onStart);
+      track.removeEventListener("touchmove", onMove);
+      track.removeEventListener("touchend", onEnd);
+      track.removeEventListener("touchcancel", onEnd);
+    };
+  }, [tab, setTab]);
+
   const pageActive = stack.length === 0 && !loginOpen;
   const bottomInset = isMobile ? (fs ? 0 : 40) : 14;
   /* 栈页（从搜索/分类/我的进入的播放页、图文页）没有底栏，
@@ -127,10 +228,13 @@ function AppBody() {
     <div className={`absolute inset-0 flex bg-canvas plat-${platform}`}>
       {!isMobile && <DesktopRail collapsed={collapsed} />}
       <div ref={mainRef} className="relative flex-1 min-w-0 overflow-hidden win-main">
-        <div className={vis("home")}><Home active={pageActive && tab === "home"} bottomInset={bottomInset} /></div>
-        <div className={vis("search")}><Search active={pageActive && tab === "search"} wide={wide} /></div>
-        <div className={vis("category")}><Category wide={wide} active={pageActive && tab === "category"} /></div>
-        <div className={vis("profile")}><Profile wide={wide} /></div>
+        {/* 四个 Tab 页排进一条横向轨道，左右跟手滑动切换；底栏位置不动，仍在下面 */}
+        <div ref={trackRef} className="tab-track absolute inset-0 flex">
+          <div className={`tab-page ${tab === "home" ? "" : "pointer-events-none"}`}><Home active={pageActive && tab === "home"} bottomInset={bottomInset} /></div>
+          <div className={`tab-page ${tab === "search" ? "" : "pointer-events-none"}`}><Search active={pageActive && tab === "search"} wide={wide} /></div>
+          <div className={`tab-page ${tab === "category" ? "" : "pointer-events-none"}`}><Category wide={wide} active={pageActive && tab === "category"} /></div>
+          <div className={`tab-page ${tab === "profile" ? "" : "pointer-events-none"}`}><Profile wide={wide} /></div>
+        </div>
 
         {stack.map((p, i) => (
           <div key={p.key} className="absolute inset-0 z-30 bg-bg a-page-in" style={{ boxShadow: "-18px 0 40px rgba(0,0,0,.5)" }}>
