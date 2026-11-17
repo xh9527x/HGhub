@@ -17,45 +17,79 @@ import ResizeHandles from "./components/ResizeHandles";
 import { tracePlayback } from "./playbackDiagnostics";
 import { IGrid, IGridF, IHome, IHomeF, ISearch, IUser, IUserF, Logo } from "./icons";
 
-/* ============ 底部标签栏（Android）—— 细瘦纯文字、低侵入 ============ */
+/* ============ 底部标签栏（Android）—— 悬浮胶囊，借鉴 HGhubX ============ */
 function TabBar() {
   const { tab, setTab, theme } = useStore();
-  const items: { k: Tab; label: string }[] = [
-    { k: "home", label: "首页" },
-    { k: "search", label: "搜索" },
-    { k: "category", label: "分类" },
-    { k: "profile", label: "我的" },
+  const items: { k: Tab; label: string; Icon: typeof IHome; Filled: typeof IHomeF }[] = [
+    { k: "home", label: "首页", Icon: IHome, Filled: IHomeF },
+    { k: "search", label: "搜索", Icon: ISearch, Filled: ISearch },
+    { k: "category", label: "分类", Icon: IGrid, Filled: IGridF },
+    { k: "profile", label: "我的", Icon: IUser, Filled: IUserF },
   ];
-  /* 细瘦纯文字分栏：只有选中项高亮，没有指示点。
+  /* 悬浮胶囊（借鉴 HGhubX）：64px 高圆角胶囊，居中、最大 440px，
+     底部用 --sab 垫高（桥接推真实值，兜底 24px），离开导航键、
+     点按面积比原来 40px 通栏大得多；选中项有滑动指示块。
      首页是沉浸视频 → 底栏压深色；搜索/分类/我的 是浅色内容页 →
-     浅色主题下底栏跟着换成浅色，深色主题保持深色。 */
+     浅色主题下底栏跟着换成浅色，深色主题保持深色。
+     外层 pointer-events:none，胶囊本身接管点按，胶囊之外的
+     区域不挡左右滑动切菜单。 */
   const overVideo = tab === "home";
   const lightBar = !overVideo && theme === "light";
+  const index = items.findIndex((it) => it.k === tab);
+  const pillBg = lightBar
+    ? "rgba(250, 250, 250, .82)"
+    : overVideo
+      ? "rgba(0, 0, 0, .5)"
+      : "rgba(20, 20, 20, .72)";
+  const pillBorder = lightBar
+    ? "1px solid rgba(0,0,0,.09)"
+    : overVideo
+      ? "1px solid rgba(255,255,255,.14)"
+      : "1px solid rgba(255,255,255,.09)";
+  const pillShadow = lightBar
+    ? "0 8px 28px rgba(0,0,0,.18)"
+    : "0 8px 28px rgba(0,0,0,.45)";
+  const dropBg = lightBar ? "rgba(0,0,0,.07)" : "rgba(255,255,255,.13)";
+  const color = (on: boolean) =>
+    lightBar
+      ? (on ? "var(--p-primary)" : "rgba(0,0,0,.45)")
+      : (on ? "#ffffff" : "rgba(255,255,255,.6)");
   return (
-    <nav className="hg-tabbar absolute bottom-0 inset-x-0 z-30"
-      style={{
-        paddingBottom: "var(--sab, 0px)",
-        background: lightBar ? "rgba(250, 250, 250, .97)" : overVideo ? "#000000" : "#141414",
-        borderTop: lightBar ? "1px solid rgba(0,0,0,.08)" : overVideo ? "none" : "1px solid rgba(255,255,255,.07)",
-        boxShadow: lightBar ? "0 -2px 14px rgba(0,0,0,.05)" : "none",
-      }}>
-      <div className="h-[40px] flex items-center px-1">
-        {items.map(({ k, label }) => {
-          const on = tab === k;
-          return (
-            <button key={k} onClick={() => setTab(k)} className="flex-1 h-full flex items-center justify-center pressable">
-              <span className="text-[12.5px] leading-none transition-colors duration-200"
-                style={{
-                  fontWeight: on ? 700 : 400,
-                  color: lightBar
-                    ? (on ? "var(--p-primary)" : "rgba(0,0,0,.45)")
-                    : (on ? "#ffffff" : "rgba(255,255,255,.6)"),
-                }}>
-                {label}
-              </span>
-            </button>
-          );
-        })}
+    <nav className="hg-tabbar absolute bottom-0 inset-x-0 z-30" aria-label="主导航"
+      style={{ padding: "10px 14px", paddingBottom: "var(--sab, 16px)", pointerEvents: "none" }}>
+      <div className="hg-tabbar-pill relative mx-auto"
+        style={{
+          height: 64,
+          width: "min(100%, 440px)",
+          borderRadius: 999,
+          background: pillBg,
+          border: pillBorder,
+          boxShadow: pillShadow,
+          pointerEvents: "auto",
+        }}>
+        <div aria-hidden="true"
+          style={{
+            position: "absolute", top: 5, bottom: 5, left: 0, width: "25%",
+            borderRadius: 999, background: dropBg,
+            transform: `translateX(${index * 100}%)`,
+            transition: "transform .35s cubic-bezier(.22,.8,.3,1)",
+            pointerEvents: "none",
+          }} />
+        <div className="relative grid grid-cols-4 h-full">
+          {items.map(({ k, label, Icon, Filled }) => {
+            const on = tab === k;
+            const Glyph = on ? Filled : Icon;
+            return (
+              <button key={k} onClick={() => setTab(k)} aria-current={on ? "page" : undefined}
+                className="relative flex flex-col items-center justify-center gap-[3px] pressable">
+                <Glyph size={22} style={{ color: color(on) }} />
+                <span className="text-[11px] leading-none font-semibold" style={{ color: color(on) }}>
+                  {label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </nav>
   );
@@ -218,7 +252,7 @@ function AppBody() {
   }, [tab, setTab]);
 
   const pageActive = stack.length === 0 && !loginOpen;
-  const bottomInset = isMobile ? (fs ? 0 : 40) : 14;
+  const bottomInset = isMobile ? (fs ? 0 : 64) : 14;
   /* 栈页（从搜索/分类/我的进入的播放页、图文页）没有底栏，
      底部只让出安全区。之前多留了 20px，视频底边会露出一条
      「底栏」似的窄缝（底部的压暗渐变到不了屏幕最底）。 */
@@ -325,7 +359,7 @@ function MobileShell() {
   // 诊断浮层已按 Wu 要求去掉（2026-11-13）；安全区桥接仍由 App 的 platform useEffect 调 sync_safe_area 触发。
   return (
     <div className="absolute inset-0 flex flex-col bg-canvas plat-android"
-      style={{ "--sat": "var(--sat-native, max(env(safe-area-inset-top), 8px))", "--sab": "var(--sab-native, max(env(safe-area-inset-bottom), 6px))" } as React.CSSProperties}>
+      style={{ "--sat": "var(--sat-native, max(env(safe-area-inset-top), 8px))", "--sab": "var(--sab-native, max(env(safe-area-inset-bottom), 24px))" } as React.CSSProperties}>
       <div className="relative flex-1 min-h-0">
         <AppBody />
       </div>

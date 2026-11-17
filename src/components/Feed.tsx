@@ -714,7 +714,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                     </button>
                     <div ref={barRef} className="mx-4 mt-2 relative" style={{ height: 14, touchAction: "none" }}
                       onPointerDown={onBarDown} onPointerMove={onBarMove} onPointerUp={onBarUp} onPointerCancel={onBarUp}>
-                      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[2.5px] rounded-full" style={{ background: "rgba(255,255,255,.3)" }}>
+                      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[4px] rounded-full" style={{ background: "rgba(255,255,255,.3)" }}>
                         <div className="h-full rounded-full bg-white"
                           style={{ width: `${barProgress * 100}%`, transition: barPct !== null ? "none" : "width .25s linear" }} />
                       </div>
@@ -734,7 +734,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                 <div className="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none" style={{ background: "rgba(0,0,0,.25)" }}>
                   <span className="text-[26px] font-bold hg-ink tabular-nums hg-ov-shadow">{fmtTime(scrub.target)}</span>
                   <span className="text-[11px] hg-ink-4 mt-1 tabular-nums">/ {fmtTime(duration)}</span>
-                  <div className="mt-4 w-[62%] h-[3px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,.25)" }}>
+                  <div className="mt-4 w-[62%] h-[5px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,.25)" }}>
                     <div className="h-full bg-white" style={{ width: `${scrub.pct}%` }} />
                   </div>
                 </div>
@@ -821,7 +821,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
         <div className="absolute inset-x-0 z-30 px-4" style={{ bottom: "calc(var(--sab, 0px) + 52px)", height: 22 }}>
           <div ref={barRef} className="relative h-full" style={{ touchAction: "none" }}
             onPointerDown={onBarDown} onPointerMove={onBarMove} onPointerUp={onBarUp} onPointerCancel={onBarUp}>
-            <div className="absolute inset-x-0 bottom-[8px] h-[2.5px] rounded-full" style={{ background: "rgba(255,255,255,.3)" }}>
+            <div className="absolute inset-x-0 bottom-[9px] h-[4px] rounded-full" style={{ background: "rgba(255,255,255,.3)" }}>
               <div className="h-full rounded-full bg-white" style={{ width: `${barProgress * 100}%` }} />
             </div>
           </div>

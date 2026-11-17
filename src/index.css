@@ -538,6 +538,8 @@ html.theme-light .article-body { color: rgba(20,24,30,.82); }
 .hg-player-ui button,
 .hg-chip,
 .hg-chip-strong { outline: none; -webkit-tap-highlight-color: transparent; }
+/* 悬浮胶囊底栏的毛玻璃（借鉴 HGhubX） */
+.hg-tabbar-pill { backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); }
 .hg-tabbar button:focus,
 .hg-tabbar button:focus-visible,
 .hg-player-ui button:focus,
